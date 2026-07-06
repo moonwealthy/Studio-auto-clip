@@ -78,6 +78,10 @@ export function detectHighlights({
   clipCount = 3,
   sourceLabel = 'Auto clip',
 }) {
+  if (!segments.length) {
+    return [];
+  }
+
   const normalizedLanguage = language.toLowerCase().startsWith('th') ? 'th' : 'en';
   const ranked = segments
     .map((segment, index) => ({
@@ -175,9 +179,7 @@ export function detectHighlights({
   }
 
   if (!selected.length) {
-    selected.push(
-      buildCandidate(segments, 0, desiredClipLengthSec, normalizedLanguage, tone),
-    );
+    selected.push(buildCandidate(segments, 0, desiredClipLengthSec, normalizedLanguage, tone));
   }
 
   return selected

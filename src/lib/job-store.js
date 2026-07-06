@@ -45,7 +45,7 @@ export function createJobStore({ dataDir }) {
         pipeline: [],
         transcript: [],
         clips: [],
-        artifacts: [],
+        artifacts: {},
         ...input,
       };
 
@@ -68,18 +68,7 @@ export function createJobStore({ dataDir }) {
         return null;
       }
 
-      if (cache.has(jobId)) {
-        return cache.get(jobId);
-      }
-
-      try {
-        const raw = await fs.readFile(jobFilePath(paths.jobsDir, jobId), 'utf8');
-        const job = JSON.parse(raw);
-        cache.set(job.id, job);
-        return job;
-      } catch {
-        return null;
-      }
+      return cache.get(jobId) ?? null;
     },
   };
 }

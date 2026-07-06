@@ -26,20 +26,63 @@ function isTrustedHostname(hostname, allowedHosts) {
 function createRateLimit({ windowMs, maxRequests }) {
   const requests = new Map();
 
-  return (request, response, next) => {
-    const key = request.ip || 'unknown';
-    const now = Date.now();
-    const recent = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+  return {
+    check(request) {
+      const key = request.ip || 'unknown';
+      const now = Date.now();
+      const recent = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
 
-    if (recent.length >= maxRequests) {
-      response.status(429).json({ error: 'Too many requests. Please try again shortly.' });
-      return;
-    }
+      if (recent.length >= maxRequests) {
+        return false;
+      }
 
-    recent.push(now);
-    requests.set(key, recent);
-    next();
+      recent.push(now);
+      requests.set(key, recent);
+      return true;
+    },
   };
+}
+
+function enforceRateLimit(limiter, request, response) {
+  if (limiter.check(request)) {
+    return false;
+  }
+
+  response.status(429).json({ error: 'Too many requests. Please try again shortly.' });
+  return true;
+}
+
+function validateJobId(jobId) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(jobId);
+}
+
+function readManifestPath(exportsDir, manifestUrl) {
+  const fileName = path.basename(manifestUrl);
+  const manifestPath = path.resolve(exportsDir, fileName);
+
+  if (!manifestPath.startsWith(path.resolve(exportsDir) + path.sep)) {
+    return null;
+  }
+
+  return manifestPath;
+}
+
+function parseApiError(error) {
+  if (error instanceof multer.MulterError) {
+    return {
+      status: 400,
+      message:
+        error.code === 'LIMIT_FILE_SIZE'
+          ? 'Uploaded files must be 300MB or smaller.'
+          : error.message,
+    };
+  }
+
+  if (error?.status && error?.message) {
+    return { status: error.status, message: error.message };
+  }
+
+  return { status: 500, message: error.message || 'Unexpected server error.' };
 }
 
 function normalizeAspectRatios(rawValue) {
@@ -149,7 +192,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.json({ status: 'ok' });
   });
 
-  app.post('/api/jobs', createJobRateLimit, (request, response, next) => {
+  app.post('/api/jobs', (request, response, next) => {
     if (request.is('multipart/form-data')) {
       upload.single('videoFile')(request, response, (error) => {
         if (error) {
@@ -165,6 +208,10 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
   });
 
   app.post('/api/jobs', async (request, response) => {
+    if (enforceRateLimit(createJobRateLimit, request, response)) {
+      return;
+    }
+
     const sourceUrl = request.body.sourceUrl?.trim() || '';
     const creativeBrief = request.body.creativeBrief?.trim() || '';
     const options = {
@@ -199,7 +246,16 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.status(202).json(job);
   });
 
-  app.get('/api/jobs/:jobId', readJobRateLimit, async (request, response) => {
+  app.get('/api/jobs/:jobId', async (request, response) => {
+    if (enforceRateLimit(readJobRateLimit, request, response)) {
+      return;
+    }
+
+    if (!validateJobId(request.params.jobId)) {
+      response.status(404).json({ error: 'Job not found.' });
+      return;
+    }
+
     const job = await jobStore.get(request.params.jobId);
 
     if (!job) {
@@ -210,7 +266,16 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.json(job);
   });
 
-  app.get('/api/jobs/:jobId/export', readJobRateLimit, async (request, response) => {
+  app.get('/api/jobs/:jobId/export', async (request, response) => {
+    if (enforceRateLimit(readJobRateLimit, request, response)) {
+      return;
+    }
+
+    if (!validateJobId(request.params.jobId)) {
+      response.status(404).json({ error: 'Export manifest is not ready yet.' });
+      return;
+    }
+
     const job = await jobStore.get(request.params.jobId);
 
     if (!job?.artifacts?.manifestUrl) {
@@ -218,14 +283,20 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
       return;
     }
 
-    const manifestPath = path.join(paths.exportsDir, path.basename(job.artifacts.manifestUrl));
+    const manifestPath = readManifestPath(paths.exportsDir, job.artifacts.manifestUrl);
+    if (!manifestPath) {
+      response.status(400).json({ error: 'Invalid export manifest path.' });
+      return;
+    }
+
     const raw = await fs.readFile(manifestPath, 'utf8');
     response.type('application/json').send(raw);
   });
 
   app.use((error, _request, response, _next) => {
-    response.status(500).json({
-      error: error.message || 'Unexpected server error.',
+    const normalized = parseApiError(error);
+    response.status(normalized.status).json({
+      error: normalized.message,
     });
   });
 

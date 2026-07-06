@@ -14,7 +14,7 @@ let pollTimer;
 
 function formatSeconds(value) {
   const minutes = Math.floor(value / 60);
-  const seconds = String(value % 60).padStart(2, '0');
+  const seconds = String(Math.floor(value % 60)).padStart(2, '0');
   return `${minutes}:${seconds}`;
 }
 

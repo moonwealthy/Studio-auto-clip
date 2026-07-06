@@ -261,7 +261,9 @@ export function createPipeline({ dataDir, jobStore }) {
   return {
     enqueue(jobId) {
       setTimeout(() => {
-        processJob(jobId).catch(() => undefined);
+        processJob(jobId).catch((error) => {
+          console.error(`Failed to process job ${jobId}`, error);
+        });
       }, 0);
     },
   };
