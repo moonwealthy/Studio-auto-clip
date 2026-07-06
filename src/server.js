@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import { rateLimit } from 'express-rate-limit';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ import { ensureDataDirectories, resolveDataPaths } from './lib/paths.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const MAX_FILE_SIZE_BYTES = 300 * 1024 * 1024;
+const MANIFEST_FILE_PATTERN = /^[0-9a-f-]+-manifest\.json$/i;
 
 function getUrlHostname(sourceUrl) {
   try {
@@ -23,48 +25,17 @@ function isTrustedHostname(hostname, allowedHosts) {
   return allowedHosts.some((allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`));
 }
 
-function createRateLimit({ windowMs, maxRequests }) {
-  const requests = new Map();
-
-  return {
-    check(request) {
-      const key = request.ip || 'unknown';
-      const now = Date.now();
-      const recent = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
-
-      if (recent.length >= maxRequests) {
-        return false;
-      }
-
-      recent.push(now);
-      requests.set(key, recent);
-      return true;
-    },
-  };
-}
-
-function enforceRateLimit(limiter, request, response) {
-  if (limiter.check(request)) {
-    return false;
-  }
-
-  response.status(429).json({ error: 'Too many requests. Please try again shortly.' });
-  return true;
-}
-
 function validateJobId(jobId) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(jobId);
 }
 
 function readManifestPath(exportsDir, manifestUrl) {
   const fileName = path.basename(manifestUrl);
-  const manifestPath = path.resolve(exportsDir, fileName);
-
-  if (!manifestPath.startsWith(path.resolve(exportsDir) + path.sep)) {
+  if (!MANIFEST_FILE_PATTERN.test(fileName)) {
     return null;
   }
 
-  return manifestPath;
+  return path.join(exportsDir, fileName);
 }
 
 function parseApiError(error) {
@@ -181,8 +152,18 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
   const jobStore = createJobStore({ dataDir });
   await jobStore.initialize();
   const pipeline = createPipeline({ dataDir, jobStore });
-  const createJobRateLimit = createRateLimit({ windowMs: 60_000, maxRequests: 10 });
-  const readJobRateLimit = createRateLimit({ windowMs: 60_000, maxRequests: 60 });
+  const createJobRateLimit = rateLimit({
+    windowMs: 60_000,
+    limit: 10,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  });
+  const readJobRateLimit = rateLimit({
+    windowMs: 60_000,
+    limit: 60,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+  });
 
   app.use(express.json({ limit: '2mb' }));
   app.use('/storage', express.static(dataDir));
@@ -192,7 +173,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.json({ status: 'ok' });
   });
 
-  app.post('/api/jobs', (request, response, next) => {
+  app.post('/api/jobs', createJobRateLimit, (request, response, next) => {
     if (request.is('multipart/form-data')) {
       upload.single('videoFile')(request, response, (error) => {
         if (error) {
@@ -208,10 +189,6 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
   });
 
   app.post('/api/jobs', async (request, response) => {
-    if (enforceRateLimit(createJobRateLimit, request, response)) {
-      return;
-    }
-
     const sourceUrl = request.body.sourceUrl?.trim() || '';
     const creativeBrief = request.body.creativeBrief?.trim() || '';
     const options = {
@@ -246,11 +223,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.status(202).json(job);
   });
 
-  app.get('/api/jobs/:jobId', async (request, response) => {
-    if (enforceRateLimit(readJobRateLimit, request, response)) {
-      return;
-    }
-
+  app.get('/api/jobs/:jobId', readJobRateLimit, async (request, response) => {
     if (!validateJobId(request.params.jobId)) {
       response.status(404).json({ error: 'Job not found.' });
       return;
@@ -266,11 +239,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.json(job);
   });
 
-  app.get('/api/jobs/:jobId/export', async (request, response) => {
-    if (enforceRateLimit(readJobRateLimit, request, response)) {
-      return;
-    }
-
+  app.get('/api/jobs/:jobId/export', readJobRateLimit, async (request, response) => {
     if (!validateJobId(request.params.jobId)) {
       response.status(404).json({ error: 'Export manifest is not ready yet.' });
       return;
@@ -289,8 +258,12 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
       return;
     }
 
-    const raw = await fs.readFile(manifestPath, 'utf8');
-    response.type('application/json').send(raw);
+    try {
+      const raw = await fs.readFile(manifestPath, 'utf8');
+      response.type('application/json').send(raw);
+    } catch {
+      response.status(500).json({ error: 'Failed to read export manifest file.' });
+    }
   });
 
   app.use((error, _request, response, _next) => {

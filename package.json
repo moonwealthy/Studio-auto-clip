@@ -23,6 +23,7 @@
   "homepage": "https://github.com/moonwealthy/Studio-auto-clip#readme",
   "dependencies": {
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "multer": "^2.2.0"
   }
 }
