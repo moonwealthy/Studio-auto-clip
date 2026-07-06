@@ -9,6 +9,38 @@ import { ensureDataDirectories, resolveDataPaths } from './lib/paths.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
+const MAX_FILE_SIZE_BYTES = 300 * 1024 * 1024;
+
+function getUrlHostname(sourceUrl) {
+  try {
+    return new URL(sourceUrl).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isTrustedHostname(hostname, allowedHosts) {
+  return allowedHosts.some((allowedHost) => hostname === allowedHost || hostname.endsWith(`.${allowedHost}`));
+}
+
+function createRateLimit({ windowMs, maxRequests }) {
+  const requests = new Map();
+
+  return (request, response, next) => {
+    const key = request.ip || 'unknown';
+    const now = Date.now();
+    const recent = (requests.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+
+    if (recent.length >= maxRequests) {
+      response.status(429).json({ error: 'Too many requests. Please try again shortly.' });
+      return;
+    }
+
+    recent.push(now);
+    requests.set(key, recent);
+    next();
+  };
+}
 
 function normalizeAspectRatios(rawValue) {
   const values = Array.isArray(rawValue)
@@ -34,11 +66,13 @@ function classifySourceLabel(sourceUrl, fileName) {
     return fileName;
   }
 
-  if (sourceUrl?.includes('youtube.com') || sourceUrl?.includes('youtu.be')) {
+  const hostname = getUrlHostname(sourceUrl);
+
+  if (isTrustedHostname(hostname, ['youtube.com', 'youtu.be'])) {
     return 'YouTube source';
   }
 
-  if (sourceUrl?.includes('tiktok.com')) {
+  if (isTrustedHostname(hostname, ['tiktok.com'])) {
     return 'TikTok source';
   }
 
@@ -61,7 +95,7 @@ async function createUploadsHandler(dataDir) {
       },
     }),
     limits: {
-      fileSize: 300 * 1024 * 1024,
+      fileSize: MAX_FILE_SIZE_BYTES,
     },
   });
 }
@@ -104,6 +138,8 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
   const jobStore = createJobStore({ dataDir });
   await jobStore.initialize();
   const pipeline = createPipeline({ dataDir, jobStore });
+  const createJobRateLimit = createRateLimit({ windowMs: 60_000, maxRequests: 10 });
+  const readJobRateLimit = createRateLimit({ windowMs: 60_000, maxRequests: 60 });
 
   app.use(express.json({ limit: '2mb' }));
   app.use('/storage', express.static(dataDir));
@@ -113,7 +149,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.json({ status: 'ok' });
   });
 
-  app.post('/api/jobs', (request, response, next) => {
+  app.post('/api/jobs', createJobRateLimit, (request, response, next) => {
     if (request.is('multipart/form-data')) {
       upload.single('videoFile')(request, response, (error) => {
         if (error) {
@@ -163,7 +199,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.status(202).json(job);
   });
 
-  app.get('/api/jobs/:jobId', async (request, response) => {
+  app.get('/api/jobs/:jobId', readJobRateLimit, async (request, response) => {
     const job = await jobStore.get(request.params.jobId);
 
     if (!job) {
@@ -174,7 +210,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     response.json(job);
   });
 
-  app.get('/api/jobs/:jobId/export', async (request, response) => {
+  app.get('/api/jobs/:jobId/export', readJobRateLimit, async (request, response) => {
     const job = await jobStore.get(request.params.jobId);
 
     if (!job?.artifacts?.manifestUrl) {

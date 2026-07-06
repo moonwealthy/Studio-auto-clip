@@ -3,6 +3,8 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ensureDataDirectories, resolveDataPaths } from './paths.js';
 
+const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function jobFilePath(jobsDir, jobId) {
   return path.join(jobsDir, `${jobId}.json`);
 }
@@ -62,6 +64,10 @@ export function createJobStore({ dataDir }) {
       });
     },
     async get(jobId) {
+      if (!JOB_ID_PATTERN.test(jobId)) {
+        return null;
+      }
+
       if (cache.has(jobId)) {
         return cache.get(jobId);
       }
