@@ -1,6 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { ensureDataDirectories } from './paths.js';
+import {
+  assignAffiliateStyles,
+  createAffiliateClips,
+  createAffiliateStrategy,
+  createAffiliateTranscript,
+} from './affiliate.js';
 import { createTranscriptSegments } from './transcript.js';
 import { detectHighlights } from './highlights.js';
 import { generateVtt } from './subtitles.js';
@@ -28,6 +34,8 @@ export function createPipeline({ dataDir, jobStore }) {
       jobId: job.id,
       source: job.source,
       options: job.options,
+      creativeBrief: job.creativeBrief,
+      creativeStrategy: job.creativeStrategy,
       warnings: job.warnings,
       transcript: job.transcript,
       clips: [],
@@ -44,6 +52,7 @@ export function createPipeline({ dataDir, jobStore }) {
         start: clip.start,
         end: clip.end,
         duration: clip.duration,
+        affiliateStyle: clip.affiliateStyle ?? null,
         subtitleFile: `/storage/exports/${vttFileName}`,
         renderTargets: job.options.aspectRatios.map((ratio) => ({
           ratio,
@@ -95,6 +104,7 @@ export function createPipeline({ dataDir, jobStore }) {
         status: 'processing',
         pipeline: [
           pipelineStep('ingest', 'completed', { detail: 'Source accepted' }),
+          pipelineStep('creative-strategy', job.creativeBrief?.trim() ? 'running' : 'skipped'),
           pipelineStep('transcription', 'running'),
           pipelineStep('highlight-detection', 'pending'),
           pipelineStep('clip-generation', 'pending'),
@@ -102,24 +112,55 @@ export function createPipeline({ dataDir, jobStore }) {
         ],
       });
 
-      const transcript = createTranscriptSegments({
-        transcriptHint: job.transcriptHint,
-        language: job.options.language,
-        sourceLabel: job.source.label,
-      });
+      const creativeStrategy = job.creativeBrief?.trim()
+        ? createAffiliateStrategy({
+            creativeBrief: job.creativeBrief,
+            language: job.options.language,
+            tone: job.options.tone,
+            clipCount: job.options.clipCount,
+            sourceLabel: job.source.label,
+          })
+        : null;
+
+      const transcript =
+        creativeStrategy && job.source.type === 'brief'
+          ? createAffiliateTranscript({
+              strategy: creativeStrategy,
+              desiredClipLengthSec: job.options.desiredClipLengthSec,
+              language: job.options.language,
+            })
+          : createTranscriptSegments({
+              transcriptHint:
+                job.transcriptHint || creativeStrategy?.styles.map((style) => style.hook).join('\n'),
+              language: job.options.language,
+              sourceLabel: creativeStrategy?.productName || job.source.label,
+            });
 
       const warnings = [...job.warnings];
-      if (!job.transcriptHint?.trim()) {
+      if (!job.transcriptHint?.trim() && job.source.type !== 'brief') {
         warnings.push(
           'No transcript hint was provided, so the demo generated a fallback transcript scaffold.',
         );
       }
+      if (creativeStrategy) {
+        warnings.push(
+          'Affiliate creative mode is enabled, so the system generated style variants, hooks, and CTA guidance from the brief automatically.',
+        );
+      }
 
       job = await jobStore.update(job.id, {
+        creativeStrategy,
         transcript,
         warnings,
         pipeline: [
           pipelineStep('ingest', 'completed', { detail: 'Source accepted' }),
+          pipelineStep(
+            'creative-strategy',
+            creativeStrategy ? 'completed' : 'skipped',
+            creativeStrategy
+              ? { detail: `${creativeStrategy.styles.length} affiliate styles prepared` }
+              : { detail: 'No affiliate brief supplied' },
+          ),
           pipelineStep('transcription', 'completed', { detail: `${transcript.length} transcript segments` }),
           pipelineStep('highlight-detection', 'running'),
           pipelineStep('clip-generation', 'pending'),
@@ -127,19 +168,47 @@ export function createPipeline({ dataDir, jobStore }) {
         ],
       });
 
-      const clips = detectHighlights({
-        segments: transcript,
-        language: job.options.language,
-        tone: job.options.tone,
-        desiredClipLengthSec: job.options.desiredClipLengthSec,
-        clipCount: job.options.clipCount,
-        sourceLabel: job.source.label,
-      });
+      const clips =
+        creativeStrategy && job.source.type === 'brief'
+          ? createAffiliateClips({
+              strategy: creativeStrategy,
+              transcript,
+              desiredClipLengthSec: job.options.desiredClipLengthSec,
+            })
+          : assignAffiliateStyles(
+              detectHighlights({
+                segments: transcript,
+                language: job.options.language,
+                tone: job.options.tone,
+                desiredClipLengthSec: job.options.desiredClipLengthSec,
+                clipCount: job.options.clipCount,
+                sourceLabel: creativeStrategy?.productName || job.source.label,
+              }),
+              creativeStrategy ?? {
+                styles: [
+                  {
+                    key: 'default',
+                    name: 'Balanced Highlight',
+                    hook: 'Lead with the strongest line.',
+                    angle: 'Use captions, proof, and a clean CTA.',
+                    cta: 'End with a clear next action.',
+                    visualDirection: 'Talking head or source footage with dynamic captions',
+                  },
+                ],
+              },
+            );
 
       job = await jobStore.update(job.id, {
         clips,
         pipeline: [
           pipelineStep('ingest', 'completed', { detail: 'Source accepted' }),
+          pipelineStep(
+            'creative-strategy',
+            creativeStrategy ? 'completed' : 'skipped',
+            creativeStrategy
+              ? { detail: `${creativeStrategy.styles.length} affiliate styles prepared` }
+              : { detail: 'No affiliate brief supplied' },
+          ),
           pipelineStep('transcription', 'completed', { detail: `${transcript.length} transcript segments` }),
           pipelineStep('highlight-detection', 'completed', { detail: `${clips.length} highlight candidates` }),
           pipelineStep('clip-generation', 'running'),
@@ -165,6 +234,13 @@ export function createPipeline({ dataDir, jobStore }) {
         artifacts,
         pipeline: [
           pipelineStep('ingest', 'completed', { detail: 'Source accepted' }),
+          pipelineStep(
+            'creative-strategy',
+            creativeStrategy ? 'completed' : 'skipped',
+            creativeStrategy
+              ? { detail: `${creativeStrategy.styles.length} affiliate styles prepared` }
+              : { detail: 'No affiliate brief supplied' },
+          ),
           pipelineStep('transcription', 'completed', { detail: `${transcript.length} transcript segments` }),
           pipelineStep('highlight-detection', 'completed', { detail: `${clips.length} highlight candidates` }),
           pipelineStep('clip-generation', 'completed', { detail: 'Preview and subtitle plans generated' }),

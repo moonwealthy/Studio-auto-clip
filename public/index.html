@@ -12,18 +12,28 @@
         <p class="eyebrow">Studio Auto Clip</p>
         <h1>Generate short-form clip plans from one long video.</h1>
         <p class="lead">
-          Upload a file or paste a source URL, tune the tone and clip length, then review highlight
-          previews, subtitle files, and export manifests.
+          Describe the affiliate angle you want, then let the system generate trending clip styles,
+          hooks, CTAs, previews, subtitle files, and export manifests automatically.
         </p>
 
         <form id="job-form" class="form">
           <label>
-            Video file
+            Affiliate brief
+            <textarea
+              name="creativeBrief"
+              rows="5"
+              placeholder="เช่น เซรั่มลดสิวสำหรับคนทำงาน ต้องการคลิปขายสไตล์ UGC และ before-after ที่ปิดยอดไว"
+              required
+            ></textarea>
+          </label>
+
+          <label>
+            Video file (optional)
             <input type="file" name="videoFile" accept="video/*" />
           </label>
 
           <label>
-            Or source URL
+            Or source URL (optional)
             <input type="url" name="sourceUrl" placeholder="https://youtube.com/watch?v=..." />
           </label>
 
@@ -65,7 +75,7 @@
             <textarea
               name="transcriptHint"
               rows="6"
-              placeholder="Paste rough transcript text here to improve highlight detection."
+              placeholder="Paste rough transcript text here to improve highlight detection when source footage already exists."
             ></textarea>
           </label>
 
@@ -90,6 +100,7 @@
         <div id="job-view" class="hidden">
           <video id="video-preview" controls class="video hidden"></video>
           <div id="job-meta" class="meta"></div>
+          <div id="strategy" class="warnings"></div>
           <ul id="pipeline" class="pipeline"></ul>
           <div id="warnings" class="warnings"></div>
           <div id="clips" class="clips"></div>

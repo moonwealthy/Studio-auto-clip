@@ -2,6 +2,7 @@
 
 MVP สำหรับระบบสร้างคลิปอัตโนมัติจากวิดีโอยาว 1 คลิป โดยเน้น workflow หลัก:
 
+- รับ brief เดียวแล้วแตกเป็น affiliate clip หลายสไตล์ยอดนิยมอัตโนมัติ
 - รับไฟล์วิดีโอหรือ source URL
 - สร้าง transcript segments
 - หา highlight อัตโนมัติด้วยกติกา keyword + tone
@@ -11,10 +12,12 @@ MVP สำหรับระบบสร้างคลิปอัตโนม�
 
 ## สิ่งที่ทำได้ในเวอร์ชันนี้
 
+- รับ creative brief เพียงอย่างเดียว แล้ว generate hooks / angles / CTA สำหรับ affiliate clip อัตโนมัติ
+- แตกออกเป็นหลายสไตล์ที่นิยม เช่น UGC, Problem/Solution, Listicle/Proof, Before/After, Expert Voiceover
 - อัปโหลดไฟล์วิดีโอหรือใส่ลิงก์ต้นทาง
 - ตั้งค่า language, tone, clip length, clip count และ aspect ratios
 - ใช้ transcript hint เพื่อช่วยการคัด highlight
-- ถ้าไม่มี transcript hint ระบบจะสร้าง transcript scaffold สำหรับ demo
+- ถ้าไม่มี transcript hint ระบบจะสร้าง transcript scaffold หรือ affiliate script scaffold สำหรับ demo
 - แสดง preview ของ clip candidates พร้อมปุ่ม jump, subtitle และ render plan
 
 > หมายเหตุ: เวอร์ชันนี้ยังไม่ render MP4 จริง เพราะ environment ไม่มี FFmpeg ติดตั้งมาให้ จึง export เป็น manifest + render plan + VTT เพื่อให้ต่อยอด worker/renderer ภายหลังได้ทันที
@@ -38,6 +41,7 @@ npm run check
 ## โครงสร้างหลัก
 
 - `/src/server.js` — Express server และ API
+- `/src/lib/affiliate.js` — logic สร้าง affiliate strategy, styles, hooks, CTA
 - `/src/lib/job-store.js` — จัดเก็บ job state ลงดิสก์
 - `/src/lib/pipeline.js` — orchestration ของ ingest, transcription, highlight detection, publishing
 - `/src/lib/highlights.js` — logic เลือกช่วงเด่น
@@ -49,4 +53,5 @@ npm run check
 1. เปลี่ยน transcript scaffold เป็น Whisper/OpenAI integration จริง
 2. เพิ่ม worker queue และ retry policy
 3. ต่อ FFmpeg renderer เพื่อสร้าง MP4 สำหรับ 9:16, 1:1, 16:9
-4. เพิ่ม branding template, auto publish และ analytics
+4. เพิ่ม real-time trend scoring ของสไตล์ affiliate ที่กำลังนิยม
+5. เพิ่ม branding template, auto publish และ analytics

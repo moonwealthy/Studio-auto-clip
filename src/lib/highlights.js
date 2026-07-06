@@ -34,19 +34,27 @@ function buildCandidate(segments, index, targetLength, language, tone) {
     const next = endIndex < segments.length - 1 ? segments[endIndex + 1] : null;
     const prevScore = prev ? segmentScore(prev, language, tone) : -1;
     const nextScore = next ? segmentScore(next, language, tone) : -1;
+    let proposedStartIndex = startIndex;
+    let proposedEndIndex = endIndex;
 
     if (nextScore >= prevScore && next) {
-      endIndex += 1;
+      proposedEndIndex += 1;
     } else if (prev) {
-      startIndex -= 1;
+      proposedStartIndex -= 1;
     } else {
       break;
     }
 
-    duration = segments[endIndex].end - segments[startIndex].start;
-    if (duration >= targetLength * 1.25) {
+    const proposedDuration =
+      segments[proposedEndIndex].end - segments[proposedStartIndex].start;
+
+    if (duration >= targetLength * 0.7 && proposedDuration > targetLength * 1.15) {
       break;
     }
+
+    startIndex = proposedStartIndex;
+    endIndex = proposedEndIndex;
+    duration = proposedDuration;
   }
 
   const selectedSegments = segments.slice(startIndex, endIndex + 1);
@@ -95,6 +103,74 @@ export function detectHighlights({
 
     if (selected.length >= clipCount) {
       break;
+    }
+  }
+
+  if (selected.length < clipCount) {
+    for (let index = 0; index < segments.length; index += 1) {
+      const candidate = buildCandidate(
+        segments,
+        index,
+        Math.max(10, Math.round(desiredClipLengthSec * 0.6)),
+        normalizedLanguage,
+        tone,
+      );
+
+      if (!overlap(candidate, selected)) {
+        selected.push(candidate);
+      }
+
+      if (selected.length >= clipCount) {
+        break;
+      }
+    }
+  }
+
+  if (selected.length < clipCount && segments.length) {
+    const partitionSize = Math.max(1, Math.ceil(segments.length / clipCount));
+
+    for (let startIndex = 0; startIndex < segments.length; startIndex += partitionSize) {
+      const partition = segments.slice(startIndex, startIndex + partitionSize);
+      const candidate = {
+        start: partition[0].start,
+        end: partition[partition.length - 1].end,
+        duration: partition[partition.length - 1].end - partition[0].start,
+        score: partition.reduce(
+          (total, segment) => total + segmentScore(segment, normalizedLanguage, tone),
+          0,
+        ),
+        text: partition.map((segment) => segment.text).join(' '),
+        transcriptSegments: partition,
+      };
+
+      if (!overlap(candidate, selected)) {
+        selected.push(candidate);
+      }
+
+      if (selected.length >= clipCount) {
+        break;
+      }
+    }
+
+    if (selected.length < clipCount) {
+      for (const segment of segments) {
+        const candidate = {
+          start: segment.start,
+          end: segment.end,
+          duration: segment.end - segment.start,
+          score: segmentScore(segment, normalizedLanguage, tone),
+          text: segment.text,
+          transcriptSegments: [segment],
+        };
+
+        if (!overlap(candidate, selected)) {
+          selected.push(candidate);
+        }
+
+        if (selected.length >= clipCount) {
+          break;
+        }
+      }
     }
   }
 

@@ -66,20 +66,24 @@ async function createUploadsHandler(dataDir) {
   });
 }
 
-function buildSource({ file, sourceUrl }) {
+function buildSource({ file, sourceUrl, creativeBrief }) {
+  const sourceType = file ? 'upload' : sourceUrl ? 'url' : 'brief';
   return {
-    type: file ? 'upload' : 'url',
-    label: classifySourceLabel(sourceUrl, file?.originalname),
+    type: sourceType,
+    label:
+      sourceType === 'brief'
+        ? creativeBrief?.trim().slice(0, 60) || 'Affiliate concept'
+        : classifySourceLabel(sourceUrl, file?.originalname),
     originalName: file?.originalname ?? null,
     mimeType: file?.mimetype ?? null,
-    playbackUrl: file ? `/storage/uploads/${file.filename}` : sourceUrl,
-    ingestReference: file ? file.path : sourceUrl,
+    playbackUrl: file ? `/storage/uploads/${file.filename}` : sourceUrl || null,
+    ingestReference: file ? file.path : sourceUrl || creativeBrief || null,
   };
 }
 
-function validateRequest({ file, sourceUrl, clipCount, desiredClipLengthSec }) {
-  if (!file && !sourceUrl) {
-    return 'Provide either a video file or a source URL.';
+function validateRequest({ file, sourceUrl, creativeBrief, clipCount, desiredClipLengthSec }) {
+  if (!file && !sourceUrl && !creativeBrief?.trim()) {
+    return 'Provide a creative brief, a video file, or a source URL.';
   }
 
   if (clipCount < 1 || clipCount > 10) {
@@ -126,6 +130,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
 
   app.post('/api/jobs', async (request, response) => {
     const sourceUrl = request.body.sourceUrl?.trim() || '';
+    const creativeBrief = request.body.creativeBrief?.trim() || '';
     const options = {
       language: request.body.language || 'th',
       tone: request.body.tone || 'balanced',
@@ -137,6 +142,7 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     const error = validateRequest({
       file: request.file,
       sourceUrl,
+      creativeBrief,
       clipCount: options.clipCount,
       desiredClipLengthSec: options.desiredClipLengthSec,
     });
@@ -147,7 +153,8 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
     }
 
     const job = await jobStore.create({
-      source: buildSource({ file: request.file, sourceUrl }),
+      source: buildSource({ file: request.file, sourceUrl, creativeBrief }),
+      creativeBrief,
       transcriptHint: request.body.transcriptHint || '',
       options,
     });
@@ -189,7 +196,10 @@ export async function createApp({ dataDir = path.resolve(projectRoot, 'data') } 
   return app;
 }
 
-if (process.env.NODE_ENV !== 'test') {
+const isDirectRun =
+  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
   const port = Number(process.env.PORT || 3000);
   const dataDir = process.env.APP_DATA_DIR || path.resolve(projectRoot, 'data');
 

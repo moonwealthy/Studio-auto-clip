@@ -3,6 +3,7 @@ const statusNode = document.querySelector('#form-status');
 const jobEmpty = document.querySelector('#job-empty');
 const jobView = document.querySelector('#job-view');
 const jobMeta = document.querySelector('#job-meta');
+const strategyNode = document.querySelector('#strategy');
 const pipelineNode = document.querySelector('#pipeline');
 const warningsNode = document.querySelector('#warnings');
 const clipsNode = document.querySelector('#clips');
@@ -27,6 +28,11 @@ function buildClipCard(clip) {
       <div class="status-pill">${clip.id}</div>
       <h3>${clip.title}</h3>
       <p>${clip.summary}</p>
+      ${
+        clip.affiliateStyle
+          ? `<p><strong>${clip.affiliateStyle.name}</strong> · ${clip.affiliateStyle.visualDirection}</p><p>${clip.affiliateStyle.hook}</p>`
+          : ''
+      }
       <div class="clip-times">
         <span>Start ${formatSeconds(clip.start)}</span>
         <span>End ${formatSeconds(clip.end)}</span>
@@ -48,10 +54,21 @@ function renderJob(job) {
   jobMeta.innerHTML = `
     <p><strong>Status:</strong> ${job.status}</p>
     <p><strong>Source:</strong> ${job.source.label}</p>
+    <p><strong>Mode:</strong> ${job.creativeStrategy?.mode || 'highlight extraction'}</p>
     <p><strong>Language:</strong> ${job.options.language}</p>
     <p><strong>Tone:</strong> ${job.options.tone}</p>
     <p><strong>Ratios:</strong> ${job.options.aspectRatios.join(', ') || '9:16, 1:1, 16:9'}</p>
   `;
+
+  strategyNode.innerHTML = job.creativeStrategy
+    ? `
+      <p><strong>Product:</strong> ${job.creativeStrategy.productName}</p>
+      <p><strong>Audience:</strong> ${job.creativeStrategy.audience}</p>
+      <p><strong>Promise:</strong> ${job.creativeStrategy.promise}</p>
+      <p><strong>CTA:</strong> ${job.creativeStrategy.cta}</p>
+      <p><strong>Styles:</strong> ${job.creativeStrategy.styles.map((style) => style.name).join(', ')}</p>
+    `
+    : '';
 
   pipelineNode.innerHTML = job.pipeline
     .map(
@@ -76,6 +93,7 @@ function renderJob(job) {
     videoNode.src = job.source.playbackUrl;
     videoNode.classList.remove('hidden');
   } else {
+    videoNode.removeAttribute('src');
     videoNode.classList.add('hidden');
   }
 
