@@ -1,0 +1,28 @@
+{
+  "name": "studio-auto-clip",
+  "version": "1.0.0",
+  "description": "MVP auto clip studio",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "check": "node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moonwealthy/Studio-auto-clip.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/moonwealthy/Studio-auto-clip/issues"
+  },
+  "homepage": "https://github.com/moonwealthy/Studio-auto-clip#readme",
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.2.0"
+  }
+}

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Studio Auto Clip MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel">
+        <p class="eyebrow">Studio Auto Clip</p>
+        <h1>Generate short-form clip plans from one long video.</h1>
+        <p class="lead">
+          Upload a file or paste a source URL, tune the tone and clip length, then review highlight
+          previews, subtitle files, and export manifests.
+        </p>
+
+        <form id="job-form" class="form">
+          <label>
+            Video file
+            <input type="file" name="videoFile" accept="video/*" />
+          </label>
+
+          <label>
+            Or source URL
+            <input type="url" name="sourceUrl" placeholder="https://youtube.com/watch?v=..." />
+          </label>
+
+          <div class="grid">
+            <label>
+              Language
+              <select name="language">
+                <option value="th">Thai</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+            <label>
+              Tone
+              <select name="tone">
+                <option value="balanced">Balanced</option>
+                <option value="educational">Educational</option>
+                <option value="energetic">Energetic</option>
+              </select>
+            </label>
+            <label>
+              Clip length (sec)
+              <input type="number" name="desiredClipLengthSec" value="30" min="10" max="120" />
+            </label>
+            <label>
+              Clip count
+              <input type="number" name="clipCount" value="3" min="1" max="10" />
+            </label>
+          </div>
+
+          <fieldset>
+            <legend>Aspect ratios</legend>
+            <label><input type="checkbox" name="aspectRatios" value="9:16" checked /> 9:16</label>
+            <label><input type="checkbox" name="aspectRatios" value="1:1" checked /> 1:1</label>
+            <label><input type="checkbox" name="aspectRatios" value="16:9" checked /> 16:9</label>
+          </fieldset>
+
+          <label>
+            Transcript hint (optional)
+            <textarea
+              name="transcriptHint"
+              rows="6"
+              placeholder="Paste rough transcript text here to improve highlight detection."
+            ></textarea>
+          </label>
+
+          <button type="submit">Create auto-clip job</button>
+          <p id="form-status" class="status"></p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="preview-header">
+          <div>
+            <p class="eyebrow">Preview</p>
+            <h2>Job output</h2>
+          </div>
+          <a id="manifest-link" class="hidden" target="_blank" rel="noreferrer">Open manifest</a>
+        </div>
+
+        <div id="job-empty" class="empty-state">
+          Submit a job to view generated transcript segments, clip candidates, and export plans.
+        </div>
+
+        <div id="job-view" class="hidden">
+          <video id="video-preview" controls class="video hidden"></video>
+          <div id="job-meta" class="meta"></div>
+          <ul id="pipeline" class="pipeline"></ul>
+          <div id="warnings" class="warnings"></div>
+          <div id="clips" class="clips"></div>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>
